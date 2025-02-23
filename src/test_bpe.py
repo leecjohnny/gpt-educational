@@ -1,6 +1,6 @@
 import pytest
 
-from bpe import decode, encode, merge, train_bpe_vocab
+from bpe import BPETokenizer
 
 
 @pytest.mark.parametrize(
@@ -15,7 +15,8 @@ from bpe import decode, encode, merge, train_bpe_vocab
     ],
 )
 def test_merge(existing_ids, pair, new_id, expected):
-    result = merge(existing_ids, pair, new_id)
+    tokenizer = BPETokenizer()
+    result = tokenizer._merge(existing_ids, pair, new_id)
     assert result == expected, f"Expected {expected}, but got {result}"
 
 
@@ -42,7 +43,8 @@ From Europe to other continents"""
     ],
 )
 def test_encode_decode(text):
-    vocab_map = train_bpe_vocab(list(text.encode("utf-8")))
-    encoded = encode(text, vocab_map)
-    decoded = decode(encoded, vocab_map)
+    tokenizer = BPETokenizer()
+    tokenizer.train(list(text.encode("utf-8")))
+    encoded = tokenizer.encode(text)
+    decoded = tokenizer.decode(encoded)
     assert text == decoded, f"'{text}' != '{decoded}'"
