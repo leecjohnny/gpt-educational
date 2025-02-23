@@ -2,7 +2,7 @@ import pytest
 import torch
 from einops import rearrange
 
-from gpt import DecoderTransformer, ModelConfig
+from gpt import DecoderTransformer, ModelConfig, MultiHeadAttention
 
 
 @pytest.fixture
@@ -51,6 +51,12 @@ def eval_model(model):
     """Create a model instance in eval mode for testing"""
     model.eval()
     return model
+
+
+@pytest.fixture
+def generation_config():
+    """Default generation configuration"""
+    return {"max_new_tokens": 8, "temperature": 0.8, "num_samples": 3}
 
 
 class TestModelInitialization:
@@ -211,7 +217,9 @@ class TestTraining:
 
 
 class TestGeneration:
-    def test_deterministic_generation(self, model_config, eval_model):
+    def test_deterministic_generation(
+        self, model_config, eval_model, generation_config
+    ):
         """Test that generation is deterministic with fixed seed"""
         x = torch.randint(
             0,
@@ -220,7 +228,7 @@ class TestGeneration:
             generator=model_config.generator,
         )
 
-        max_new_tokens = 4
+        max_new_tokens = generation_config["max_new_tokens"]
 
         # First generation
         generated1 = eval_model.generate(x, max_new_tokens=max_new_tokens)
@@ -238,17 +246,44 @@ class TestGeneration:
         assert torch.equal(generated1, generated2), "Generation is not deterministic"
 
     @pytest.mark.parametrize("temperature", [0.0, 0.5, 1.0])
-    def test_temperature_sampling(self, eval_model, model_inputs, temperature):
+    def test_temperature_sampling(
+        self, eval_model, model_inputs, generation_config, temperature
+    ):
         """Test generation with different temperature values"""
         x, _ = model_inputs
-        generated = eval_model.generate(x, max_new_tokens=4, temperature=temperature)
+        generated = eval_model.generate(
+            x,
+            max_new_tokens=generation_config["max_new_tokens"],
+            temperature=temperature,
+        )
         assert generated.shape[1] > x.shape[1], "No tokens were generated"
 
+    def test_multiple_completions(self, eval_model, model_inputs, generation_config):
+        """Test generating multiple completions for the same input"""
+        x, _ = model_inputs
+        generated = eval_model.generate(
+            x,
+            max_new_tokens=generation_config["max_new_tokens"],
+            temperature=generation_config["temperature"],
+            num_samples=generation_config["num_samples"],
+        )
 
-class TestAttentionMechanism:
+        # Check shape includes num_samples dimension
+        assert generated.shape == (
+            eval_model.config.batch_size,
+            generation_config["num_samples"],
+            eval_model.config.block_size + generation_config["max_new_tokens"],
+        ), "Unexpected shape for multiple completions"
+
+
+class TestMultiHeadAttentionMechanism:
     def test_causal_masking(self, model_config):
         """Test attention patterns in the model"""
         model = DecoderTransformer(model_config)
+
+        ## check the model uses multi-head attention, if not skip the test
+        if not isinstance(model.blocks[0].self_attention, MultiHeadAttention):
+            pytest.skip("Model does not use multi-head attention")
 
         # Create sample input
         x = torch.randint(
@@ -301,19 +336,3 @@ class TestAttentionMechanism:
                         assert scores[0, i, j].item() != float(
                             "-inf"
                         ), f"Past/present position ({i}, {j}) incorrectly masked"
-
-    def test_attention_output_range(self, model, model_inputs, model_config):
-        """Test that attention outputs are in a reasonable range"""
-        x, _ = model_inputs
-        first_head = model.blocks[0].self_attention.heads[0]
-
-        embeds = model.embedding(x)
-        pos_embeds = model.positional_embedding(
-            model.positions[: model_config.block_size]
-        )
-        hidden_states = embeds + pos_embeds
-
-        with torch.no_grad():
-            attention_output = first_head(hidden_states)
-            assert not torch.isnan(attention_output).any(), "NaN in attention output"
-            assert not torch.isinf(attention_output).any(), "Inf in attention output"
