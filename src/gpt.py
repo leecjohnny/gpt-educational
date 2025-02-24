@@ -9,17 +9,17 @@ from pydantic import BaseModel
 
 
 class ModelConfig(BaseModel):
-    vocab_size: int
-    block_size: int
-    embed_dim: int
-    hidden_dim: int
-    batch_size: int
-    num_layers: int
-    num_heads: int
-    head_size: int
-    dropout: float
-    ffw_width_multiplier: int
-    seed: int
+    vocab_size: int  # Size of vocabulary
+    block_size: int  # Context size for the model
+    embed_dim: int  # Embedding dimension
+    hidden_dim: int  # Hidden dimension for transformer
+    batch_size: int  # Batch size for training
+    num_layers: int  # Number of transformer layers
+    num_heads: int  # Number of attention heads
+    head_size: int  # Size of each attention head
+    dropout: float  # Dropout rate
+    ffw_width_multiplier: int  # Multiplier for FFW layer width
+    seed: int  # Random seed for reproducibility
 
 
 class Head(nn.Module):

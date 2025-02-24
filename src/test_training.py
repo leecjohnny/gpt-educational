@@ -80,9 +80,12 @@ def test_setup_tokenizer_and_data(sample_data_file, tokenizer_path):
         train_val_split=0.8,
         max_steps=10,
         device="cpu",
-        tokenizer_config={"type": "bpe", "max_vocab_size": 256},
+        tokenizer_config=training.TokenizerConfig(
+            type="bpe", max_vocab_size=256, model_name="gpt2"
+        ),
         data_path=sample_data_file,
         tokenizer_path=tokenizer_path,
+        model_save_path=None,
     )
 
     # Call the function
@@ -180,10 +183,11 @@ def test_train_model(longer_sample_data_file, tokenizer_path, model_path):
         train_val_split=0.8,
         max_steps=5,  # Very short training run for test
         device="cpu",
-        tokenizer_config={
-            "type": "bpe",
-            "max_vocab_size": 256,
-        },
+        tokenizer_config=training.TokenizerConfig(
+            type="bpe",
+            max_vocab_size=256,
+            model_name="gpt2",
+        ),
         data_path=longer_sample_data_file,
         tokenizer_path=tokenizer_path,
         model_save_path=model_path,
@@ -497,9 +501,9 @@ def test_fire_cli():
         "run",
         "python",
         os.path.join(os.path.dirname(__file__), "training.py"),
-        data_file,
-        model_file,
-        tokenizer_file,
+        "--data_path=" + data_file,
+        "--model_save_path=" + model_file,
+        "--tokenizer_path=" + tokenizer_file,
         "--max_steps=1",
         "--device=cpu",
         "--block_size=2",  # Very small block size
