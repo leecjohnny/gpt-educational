@@ -1,14 +1,14 @@
-from dataclasses import dataclass
+import logging
 from typing import Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange, repeat
+from pydantic import BaseModel
 
 
-@dataclass
-class ModelConfig:
+class ModelConfig(BaseModel):
     vocab_size: int
     block_size: int
     embed_dim: int
@@ -20,15 +20,6 @@ class ModelConfig:
     dropout: float
     ffw_width_multiplier: int
     seed: int
-    _generator: torch.Generator | None = None
-
-    @property
-    def generator(self) -> torch.Generator:
-        if self._generator is None:
-            self._generator = torch.Generator()
-        # Always reset the generator state to ensure consistent random numbers
-        self._generator.manual_seed(self.seed)
-        return self._generator
 
 
 class Head(nn.Module):
@@ -44,11 +35,11 @@ class Head(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         _, T, C = x.shape
-        q = self.q(x)  ## (B, T, C)
         k = self.k(x)  ## (B, T, C)
+        q = self.q(x)  ## (B, T, C)
 
         # compute attention scores
-        scores = q @ rearrange(k, "b t h -> b h t") * C**-0.5  ## (B, T, T)
+        scores = q @ k.transpose(-2, -1) * C**-0.5  ## (B, T, T)
         assert isinstance(self.tril, torch.Tensor)
         scores = scores.masked_fill(
             self.tril[:T, :T] == 0,
@@ -98,8 +89,8 @@ class FeedForward(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
-        self.ln1 = nn.LayerNorm(config.hidden_dim)
-        self.ln2 = nn.LayerNorm(config.hidden_dim)
+        self.ln1 = nn.LayerNorm(config.embed_dim)
+        self.ln2 = nn.LayerNorm(config.embed_dim)
         self.self_attention = MultiHeadAttention(config)
         self.ffw = FeedForward(config)
 
@@ -112,29 +103,32 @@ class TransformerBlock(nn.Module):
 class DecoderTransformer(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
+        torch.use_deterministic_algorithms(True)
+        torch.manual_seed(config.seed)
         self.config = config
         self.embedding = nn.Embedding(config.vocab_size, config.embed_dim)
         self.positional_embedding = nn.Embedding(config.block_size, config.hidden_dim)
-        self.register_buffer("positions", torch.arange(config.block_size))
         self.blocks = nn.Sequential(
             *[TransformerBlock(config) for _ in range(config.num_layers)],
             nn.LayerNorm(config.hidden_dim),
         )
         self.lm_head = nn.Linear(config.hidden_dim, config.vocab_size)
         self.apply(self._init_weights)
-        torch.use_deterministic_algorithms(True)
+        logging.info(f"Initializing model with {self.get_num_params()} parameters")
 
     def _init_weights(self, module: nn.Module) -> None:
         if isinstance(module, nn.Linear):
-            torch.nn.init.normal_(
-                module.weight, mean=0.0, std=0.02, generator=self.config.generator
-            )
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
-            torch.nn.init.normal_(
-                module.weight, mean=0.0, std=0.02, generator=self.config.generator
-            )
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        elif isinstance(module, nn.LayerNorm):
+            torch.nn.init.zeros_(module.bias)
+            torch.nn.init.ones_(module.weight)
+
+    def get_num_params(self):
+        return sum(p.numel() for p in self.parameters())
 
     def forward(
         self, x: torch.Tensor, targets: torch.Tensor | None = None
@@ -142,8 +136,7 @@ class DecoderTransformer(nn.Module):
         B, T = x.shape
         ##project the input tokens to the hidden dimension
         embeds = self.embedding(x)
-        assert isinstance(self.positions, torch.Tensor)
-        positions = self.positional_embedding(self.positions)
+        positions = self.positional_embedding(torch.arange(T, device=x.device))
         x = embeds + positions  ## (B, T, C)
         x = self.blocks(x)  ## (B, T, C)
         logits = self.lm_head(x)  ## (B, T, V)
@@ -166,6 +159,7 @@ class DecoderTransformer(nn.Module):
         max_new_tokens: int,
         temperature: float = 0.0,
         num_samples: int = 1,
+        random_seed: int | None = None,
     ) -> torch.Tensor:
         ## check model is in eval mode
         assert self.training is False, "Model must be in eval mode for generation"
@@ -174,15 +168,25 @@ class DecoderTransformer(nn.Module):
             x = repeat(x, "b t -> b s t", s=num_samples)  # (B, S, T)
             x = rearrange(x, "b s t -> (b s) t")  # (B*S, T)
 
+        generator = torch.Generator(
+            device=x.device,
+        )
+
+        if random_seed is not None:
+            generator.manual_seed(random_seed)
+
         for _ in range(max_new_tokens):
-            context = x[:, -self.config.block_size :]
+            context = x[
+                :,
+                -self.config.block_size :,  ## shift the context window, truncate if necessary
+            ]
             logits, _ = self(context)
             logits = logits[:, -1, :]  # only take the last timestamp's logits
             if temperature > 0.0:
                 logits = logits / temperature
             probs = F.softmax(logits, dim=-1)
             x_next = torch.multinomial(
-                probs, num_samples=1, generator=self.config.generator
+                probs, num_samples=1, generator=generator
             )  # (B, 1)
             x = torch.cat((x, x_next), dim=1)  # (B, T+1)
 

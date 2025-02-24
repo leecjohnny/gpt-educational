@@ -6,51 +6,26 @@ from gpt import DecoderTransformer, ModelConfig, MultiHeadAttention
 
 
 @pytest.fixture
-def model_config():
-    return ModelConfig(
-        vocab_size=100,
-        block_size=8,
-        embed_dim=32,
-        hidden_dim=32,
-        batch_size=4,
-        num_layers=2,
-        num_heads=4,
-        head_size=8,
-        dropout=0.1,
-        ffw_width_multiplier=4,
-        seed=42,
-    )
-
-
-@pytest.fixture
-def model_inputs(model_config):
+def model_inputs():
     """Generate deterministic inputs for testing"""
-    x = torch.randint(
-        0,
-        model_config.vocab_size,
-        (model_config.batch_size, model_config.block_size),
-        generator=model_config.generator,
+    return (
+        torch.tensor(
+            [
+                [1, 2, 3, 4, 5, 6, 7, 8],
+                [2, 3, 4, 5, 6, 7, 8, 9],
+                [3, 4, 5, 6, 7, 8, 9, 10],
+                [4, 5, 6, 7, 8, 9, 10, 11],
+            ]
+        ),
+        torch.tensor(
+            [
+                [2, 3, 4, 5, 6, 7, 8, 9],
+                [3, 4, 5, 6, 7, 8, 9, 10],
+                [4, 5, 6, 7, 8, 9, 10, 11],
+                [5, 6, 7, 8, 9, 10, 11, 12],
+            ]
+        ),
     )
-    targets = torch.randint(
-        0,
-        model_config.vocab_size,
-        (model_config.batch_size, model_config.block_size),
-        generator=model_config.generator,
-    )
-    return x, targets
-
-
-@pytest.fixture
-def model(model_config):
-    """Create a model instance for testing"""
-    return DecoderTransformer(model_config)
-
-
-@pytest.fixture
-def eval_model(model):
-    """Create a model instance in eval mode for testing"""
-    model.eval()
-    return model
 
 
 @pytest.fixture
@@ -60,13 +35,26 @@ def generation_config():
 
 
 class TestModelInitialization:
-    def test_deterministic_initialization(self, model_config):
+    def test_deterministic_initialization(self):
         """Test that model initialization is deterministic with fixed seed"""
+        config = ModelConfig(
+            vocab_size=100,
+            block_size=8,
+            embed_dim=32,
+            hidden_dim=32,
+            batch_size=4,
+            num_layers=2,
+            num_heads=4,
+            head_size=8,
+            dropout=0.1,
+            ffw_width_multiplier=4,
+            seed=42,
+        )
         # Get initial parameters
-        model1 = DecoderTransformer(model_config)
+        model1 = DecoderTransformer(config)
         initial_params = dict(model1.named_parameters())
 
-        model2 = DecoderTransformer(model_config)
+        model2 = DecoderTransformer(config)
         new_params = dict(model2.named_parameters())
 
         # Check that parameters are identical
@@ -90,42 +78,69 @@ class TestModelInitialization:
             },  # Keep dimensions compatible
         ],
     )
-    def test_different_configurations(self, model_config, config_changes):
+    def test_different_configurations(self, config_changes):
         """Test model initialization with different configurations"""
+        config = ModelConfig(
+            vocab_size=100,
+            block_size=8,
+            embed_dim=32,
+            hidden_dim=32,
+            batch_size=4,
+            num_layers=2,
+            num_heads=4,
+            head_size=8,
+            dropout=0.1,
+            ffw_width_multiplier=4,
+            seed=42,
+        )
         for key, value in config_changes.items():
-            setattr(model_config, key, value)
-        model = DecoderTransformer(model_config)
+            setattr(config, key, value)
+        model = DecoderTransformer(config)
         # Verify the model can do a forward pass
         x = torch.randint(
             0,
-            model_config.vocab_size,
-            (model_config.batch_size, model_config.block_size),
-            generator=model_config.generator,
+            config.vocab_size,
+            (config.batch_size, config.block_size),
         )
         logits, _ = model(x)
         assert logits.shape == (
-            model_config.batch_size,
-            model_config.block_size,
-            model_config.vocab_size,
+            config.batch_size,
+            config.block_size,
+            config.vocab_size,
         )
 
 
 class TestForwardPass:
-    def test_deterministic_output(self, model_config, model_inputs, eval_model):
+    def test_deterministic_output(self, model_inputs):
         """Test forward pass produces expected shape and deterministic outputs"""
+        config = ModelConfig(
+            vocab_size=100,
+            block_size=8,
+            embed_dim=32,
+            hidden_dim=32,
+            batch_size=4,
+            num_layers=2,
+            num_heads=4,
+            head_size=8,
+            dropout=0.1,
+            ffw_width_multiplier=4,
+            seed=42,
+        )
+        model = DecoderTransformer(config)
+        model.eval()
         x, targets = model_inputs
 
         # First forward pass
-        logits1, loss1 = eval_model(x, targets)
+        logits1, loss1 = model(x, targets)
 
         # Second forward pass with same inputs
-        logits2, loss2 = eval_model(x, targets)
+        logits2, loss2 = model(x, targets)
 
         # Check shapes
         assert logits1.shape == (
-            model_config.batch_size,
-            model_config.block_size,
-            model_config.vocab_size,
+            config.batch_size,
+            config.block_size,
+            config.vocab_size,
         ), "Unexpected logits shape"
 
         # Check deterministic behavior
@@ -134,32 +149,58 @@ class TestForwardPass:
         ), f"Logits differ: {logits1} != {logits2}"
         assert torch.allclose(loss1, loss2), f"Losses differ: {loss1} != {loss2}"
 
-    def test_different_batch_sizes(self, model_config, eval_model):
+    def test_different_batch_sizes(self):
         """Test forward pass with different batch sizes"""
+        config = ModelConfig(
+            vocab_size=100,
+            block_size=8,
+            embed_dim=32,
+            hidden_dim=32,
+            batch_size=4,
+            num_layers=2,
+            num_heads=4,
+            head_size=8,
+            dropout=0.1,
+            ffw_width_multiplier=4,
+            seed=42,
+        )
+        model = DecoderTransformer(config)
+        model.eval()
+
         batch_sizes = [1, 2, 8]
         for batch_size in batch_sizes:
             x = torch.randint(
                 0,
-                model_config.vocab_size,
-                (batch_size, model_config.block_size),
-                generator=model_config.generator,
+                config.vocab_size,
+                (batch_size, config.block_size),
             )
-            logits, _ = eval_model(x)
+            logits, _ = model(x)
             assert logits.shape == (
                 batch_size,
-                model_config.block_size,
-                model_config.vocab_size,
+                config.block_size,
+                config.vocab_size,
             ), f"Failed for batch_size={batch_size}"
 
 
 class TestTraining:
-    def test_gradient_determinism(self, model_config, model_inputs):
+    def test_gradient_determinism(self, model_inputs):
         """Test that gradients are deterministic across multiple backward passes"""
+        config = ModelConfig(
+            vocab_size=100,
+            block_size=8,
+            embed_dim=32,
+            hidden_dim=32,
+            batch_size=4,
+            num_layers=2,
+            num_heads=4,
+            head_size=8,
+            dropout=0.0,  # Set to 0 for deterministic behavior
+            ffw_width_multiplier=4,
+            seed=42,
+        )
         x, targets = model_inputs
 
-        # Reinitialize model with 0 dropout
-        model_config.dropout = 0.0
-        model = DecoderTransformer(model_config)
+        model = DecoderTransformer(config)
         model.train()
 
         # First forward/backward pass
@@ -182,19 +223,26 @@ class TestTraining:
             ), f"Gradients differ for {name}"
 
     @pytest.mark.parametrize("seed", [42, 123, 999])
-    def test_gradient_determinism_different_seeds(
-        self, model_config, model_inputs, seed
-    ):
+    def test_gradient_determinism_different_seeds(self, model_inputs, seed):
         """Test gradient determinism with different random seeds"""
+        config = ModelConfig(
+            vocab_size=100,
+            block_size=8,
+            embed_dim=32,
+            hidden_dim=32,
+            batch_size=4,
+            num_layers=2,
+            num_heads=4,
+            head_size=8,
+            dropout=0.0,  # Set to 0 for deterministic behavior
+            ffw_width_multiplier=4,
+            seed=seed,
+        )
         x, targets = model_inputs
 
-        # Set dropout to 0 in config for deterministic behavior
-        model_config.dropout = 0.0
-
         # Create two models with same seed
-        model_config.seed = seed
-        model1 = DecoderTransformer(model_config)
-        model2 = DecoderTransformer(model_config)
+        model1 = DecoderTransformer(config)
+        model2 = DecoderTransformer(config)
 
         # Put models in train mode
         model1.train()
@@ -217,51 +265,94 @@ class TestTraining:
 
 
 class TestGeneration:
-    def test_deterministic_generation(
-        self, model_config, eval_model, generation_config
-    ):
+    def test_deterministic_generation(self, generation_config):
         """Test that generation is deterministic with fixed seed"""
+        config = ModelConfig(
+            vocab_size=100,
+            block_size=8,
+            embed_dim=32,
+            hidden_dim=32,
+            batch_size=4,
+            num_layers=2,
+            num_heads=4,
+            head_size=8,
+            dropout=0.1,
+            ffw_width_multiplier=4,
+            seed=42,
+        )
+        model = DecoderTransformer(config)
+        model.eval()
+
         x = torch.randint(
             0,
-            model_config.vocab_size,
-            (model_config.batch_size, model_config.block_size),
-            generator=model_config.generator,
+            config.vocab_size,
+            (config.batch_size, config.block_size),
         )
 
         max_new_tokens = generation_config["max_new_tokens"]
 
         # First generation
-        generated1 = eval_model.generate(x, max_new_tokens=max_new_tokens)
+        generated1 = model.generate(x, max_new_tokens=max_new_tokens)
 
         # Second generation with same input
-        generated2 = eval_model.generate(x, max_new_tokens=max_new_tokens)
+        generated2 = model.generate(x, max_new_tokens=max_new_tokens)
 
         # Check shapes
         assert generated1.shape == (
-            model_config.batch_size,
-            model_config.block_size + max_new_tokens,
+            config.batch_size,
+            config.block_size + max_new_tokens,
         ), "Unexpected generation shape"
 
         # Check deterministic behavior
         assert torch.equal(generated1, generated2), "Generation is not deterministic"
 
     @pytest.mark.parametrize("temperature", [0.0, 0.5, 1.0])
-    def test_temperature_sampling(
-        self, eval_model, model_inputs, generation_config, temperature
-    ):
+    def test_temperature_sampling(self, model_inputs, generation_config, temperature):
         """Test generation with different temperature values"""
+        config = ModelConfig(
+            vocab_size=100,
+            block_size=8,
+            embed_dim=32,
+            hidden_dim=32,
+            batch_size=4,
+            num_layers=2,
+            num_heads=4,
+            head_size=8,
+            dropout=0.1,
+            ffw_width_multiplier=4,
+            seed=42,
+        )
+        model = DecoderTransformer(config)
+        model.eval()
+
         x, _ = model_inputs
-        generated = eval_model.generate(
+        generated = model.generate(
             x,
             max_new_tokens=generation_config["max_new_tokens"],
             temperature=temperature,
         )
         assert generated.shape[1] > x.shape[1], "No tokens were generated"
 
-    def test_multiple_completions(self, eval_model, model_inputs, generation_config):
+    def test_multiple_completions(self, model_inputs, generation_config):
         """Test generating multiple completions for the same input"""
+        config = ModelConfig(
+            vocab_size=100,
+            block_size=8,
+            embed_dim=32,
+            hidden_dim=32,
+            batch_size=4,
+            num_layers=2,
+            num_heads=4,
+            head_size=8,
+            dropout=0.1,
+            ffw_width_multiplier=4,
+            seed=42,
+        )
+        model = DecoderTransformer(config)
+        model.eval()
+
         x, _ = model_inputs
-        generated = eval_model.generate(
+        generated = model.generate(
             x,
             max_new_tokens=generation_config["max_new_tokens"],
             temperature=generation_config["temperature"],
@@ -270,16 +361,29 @@ class TestGeneration:
 
         # Check shape includes num_samples dimension
         assert generated.shape == (
-            eval_model.config.batch_size,
+            config.batch_size,
             generation_config["num_samples"],
-            eval_model.config.block_size + generation_config["max_new_tokens"],
+            config.block_size + generation_config["max_new_tokens"],
         ), "Unexpected shape for multiple completions"
 
 
 class TestMultiHeadAttentionMechanism:
-    def test_causal_masking(self, model_config):
+    def test_causal_masking(self):
         """Test attention patterns in the model"""
-        model = DecoderTransformer(model_config)
+        config = ModelConfig(
+            vocab_size=100,
+            block_size=8,
+            embed_dim=32,
+            hidden_dim=32,
+            batch_size=4,
+            num_layers=2,
+            num_heads=4,
+            head_size=8,
+            dropout=0.1,
+            ffw_width_multiplier=4,
+            seed=42,
+        )
+        model = DecoderTransformer(config)
 
         ## check the model uses multi-head attention, if not skip the test
         if not isinstance(model.blocks[0].self_attention, MultiHeadAttention):
@@ -288,9 +392,8 @@ class TestMultiHeadAttentionMechanism:
         # Create sample input
         x = torch.randint(
             0,
-            model_config.vocab_size,
-            (model_config.batch_size, model_config.block_size),
-            generator=model_config.generator,
+            config.vocab_size,
+            (config.batch_size, config.block_size),
         )
 
         # Get attention scores from first head
@@ -299,18 +402,16 @@ class TestMultiHeadAttentionMechanism:
 
         # Forward pass through embeddings
         embeds = model.embedding(x)
-        pos_embeds = model.positional_embedding(
-            model.positions[: model_config.block_size]
-        )
+        pos_embeds = model.positional_embedding(torch.arange(x.shape[1]))
         hidden_states = embeds + pos_embeds
 
         attention_output = first_head(hidden_states)
 
         # Check output shape
         assert attention_output.shape == (
-            model_config.batch_size,
-            model_config.block_size,
-            model_config.head_size,
+            config.batch_size,
+            config.block_size,
+            config.head_size,
         ), "Unexpected attention output shape"
 
         # Check attention scores
@@ -326,8 +427,8 @@ class TestMultiHeadAttentionMechanism:
             scores = scores.masked_fill(mask, float("-inf"))
 
             # Verify causal masking
-            for i in range(model_config.block_size):
-                for j in range(model_config.block_size):
+            for i in range(config.block_size):
+                for j in range(config.block_size):
                     if j > i:  # Future positions should be masked
                         assert scores[0, i, j].item() == float(
                             "-inf"
