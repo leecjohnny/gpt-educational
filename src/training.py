@@ -23,10 +23,9 @@ T = TypeVar("T")
 class TokenizerConfig(BaseModel):
     """Configuration for tokenizer."""
 
-    type: str = "bpe"  # Options: "bpe" or "tiktoken"
-    max_vocab_size: int = 1024  # For BPE only
-    model_name: str = "gpt2"  # For tiktoken only
-
+    type: str  # Options: "bpe" or "tiktoken"
+    max_vocab_size: int  # For BPE only
+    model_name: str  # For tiktoken only
 
 class TrainingConfig(BaseModel):
     """Configuration for training a GPT model."""
@@ -49,8 +48,8 @@ class TrainingConfig(BaseModel):
 
     # Data paths
     data_path: str
-    tokenizer_path: Optional[str] = None
-    model_save_path: Optional[str] = None
+    tokenizer_path: Optional[str]
+    model_save_path: Optional[str]
 
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> "TrainingConfig":
@@ -333,36 +332,36 @@ def train_model(config: TrainingConfig) -> gpt.DecoderTransformer:
 
 
 def run_training(
-    # Required positional or named parameters
+   # Configuration can be loaded from YAML or from CLI parameters
+    config_path: str = None,  # Path to YAML config file
+    # Required parameters if no config file is provided
     data_path: str = None,
     model_save_path: str = None,
     tokenizer_path: str = None,
-    # Optional parameters with defaults
-    config_path: str = None,  # Path to YAML config file
     # Model configuration parameters
-    device: str = "mps",
-    tokenizer_type: str = "bpe",
-    max_vocab_size: int = 1024,
-    model_name: str = "gpt2",
-    block_size: int = 256,
-    embed_dim: int = 256,
-    hidden_dim: int = 256,
-    batch_size: int = 32,
-    num_layers: int = 3,
-    head_size: int = 64,
-    num_heads: int = 4,
-    dropout: float = 0.2,
-    ffw_width_multiplier: int = 4,
+    device: str = None,
+    tokenizer_type: str = None,
+    max_vocab_size: int = None,
+    model_name: str = None,
+    block_size: int = None,
+    embed_dim: int = None,
+    hidden_dim: int = None,
+    batch_size: int = None,
+    num_layers: int = None,
+    head_size: int = None,
+    num_heads: int = None,
+    dropout: float = None,
+    ffw_width_multiplier: int = None,
     # Training parameters
-    train_epochs: int = 100,
-    val_epochs: int = 1,
-    learning_rate: float = 0.1,
-    train_val_split: float = 0.8,
-    eval_interval: int = 200,
-    eval_iters: int = 20,
-    max_steps: int = 5000,
-    seed: int = 42,
-    # Extra parameters for flexibility
+    train_epochs: int = None,
+    val_epochs: int = None,
+    learning_rate: float = None,
+    train_val_split: float = None,
+    eval_interval: int = None,
+    eval_iters: int = None,
+    max_steps: int = None,
+    seed: int = None,
+    # Extra parameters
     **extra_config_params,
 ):
     """CLI interface to train a GPT model.
