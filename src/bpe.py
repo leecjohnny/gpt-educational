@@ -1,8 +1,8 @@
-from collections import Counter
-from functools import lru_cache
 import os
 import pickle
-from typing import Dict, List, Tuple, Protocol
+from collections import Counter
+from functools import lru_cache
+from typing import Dict, List, Protocol, Tuple
 
 import tiktoken
 
@@ -71,20 +71,15 @@ class BPETokenizer:
         """Replace all occurrences of a token pair with a new token ID."""
         new_ids = []
         assert len(existing_ids) > 1, "Not enough pairs to merge"
-
-        # More efficient implementation that scans the sequence once
-        i = 0
-        while i < len(existing_ids):
-            if (
-                i < len(existing_ids) - 1
-                and (existing_ids[i], existing_ids[i + 1]) == pair
-            ):
+        idx_to_skip: int | None = None
+        for idx, (i0, i1) in enumerate(zip(existing_ids, existing_ids[1:] + [None])):
+            if idx == idx_to_skip:
+                continue
+            elif i0 == pair[0] and i1 == pair[1]:
                 new_ids.append(new_id)
-                i += 2
-            else:
-                new_ids.append(existing_ids[i])
-                i += 1
-
+                idx_to_skip = idx + 1
+                continue
+            new_ids.append(i0)
         return new_ids
 
     def train(self, input_ids: List[int]) -> None:
@@ -190,63 +185,17 @@ class BPETokenizer:
         return text_bytes.decode("utf-8", errors="replace")
 
     def encode_bytes(self, text_bytes: bytes) -> List[int]:
-        """Encode bytes to token IDs."""
-        # Check the cache first for small inputs
-        if len(text_bytes) < 1024 and text_bytes in self._encoding_cache:
-            return self._encoding_cache[text_bytes]
-
-        # For performance, pre-filter the vocab map
-        vocab_map_pairs = {k: v for k, v in self.vocab_map.items() if len(k) > 1}
-
-        if not vocab_map_pairs:
-            return list(text_bytes)
-
-        # Sort pairs by ID (typically higher IDs are more specific merges)
-        sorted_pairs = sorted(vocab_map_pairs.items(), key=lambda x: x[1], reverse=True)
-
-        # Start with byte-level encoding
+        vocab_map_minus_single_bytes = {k: v for k, v in self.vocab_map.items()}
         ids = list(text_bytes)
-
-        # For large inputs, process in chunks
-        if len(ids) > 1024:
-            result = []
-            for i in range(0, len(ids), 1024):
-                chunk = ids[i : i + 1024]
-                result.extend(self._encode_chunk(chunk, sorted_pairs))
-            ids = result
-        else:
-            ids = self._encode_chunk(ids, sorted_pairs)
-
-        # Cache the result for small inputs
-        if len(text_bytes) < 1024:
-            self._encoding_cache[text_bytes] = ids
-
-        return ids
-
-    def _encode_chunk(
-        self, ids: List[int], sorted_pairs: List[Tuple[Tuple[int, ...], int]]
-    ) -> List[int]:
-        """Encode a chunk of token IDs using the vocabulary."""
-        changed = True
-        while changed and len(ids) >= 2:
-            changed = False
-            for pair, token_id in sorted_pairs:
-                # Process all occurrences of the pair in one pass
-                i = 0
-                new_ids = []
-                while i < len(ids):
-                    if i < len(ids) - 1 and (ids[i], ids[i + 1]) == pair:
-                        new_ids.append(token_id)
-                        i += 2
-                        changed = True
-                    else:
-                        new_ids.append(ids[i])
-                        i += 1
-
-                ids = new_ids
-                if len(ids) < 2:
-                    break
-
+        while len(ids) >= 2:
+            pairs = self._get_stats(ids)
+            pair = min(
+                pairs, key=lambda p: vocab_map_minus_single_bytes.get(p, float("inf"))
+            )
+            if pair not in vocab_map_minus_single_bytes:
+                break
+            idx = vocab_map_minus_single_bytes[pair]
+            ids = self._merge(ids, pair, idx)
         return ids
 
     def encode(self, text: str) -> List[int]:

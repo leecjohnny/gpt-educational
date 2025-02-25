@@ -1,7 +1,7 @@
 import logging
 import time
 from pathlib import Path
-from typing import Tuple, Optional, Union, Dict, Any, List, TypeVar, Type
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 import fire
 import torch
@@ -26,6 +26,7 @@ class TokenizerConfig(BaseModel):
     type: str  # Options: "bpe" or "tiktoken"
     max_vocab_size: int  # For BPE only
     model_name: str  # For tiktoken only
+
 
 class TrainingConfig(BaseModel):
     """Configuration for training a GPT model."""
@@ -332,7 +333,7 @@ def train_model(config: TrainingConfig) -> gpt.DecoderTransformer:
 
 
 def run_training(
-   # Configuration can be loaded from YAML or from CLI parameters
+    # Configuration can be loaded from YAML or from CLI parameters
     config_path: str = None,  # Path to YAML config file
     # Required parameters if no config file is provided
     data_path: str = None,
@@ -430,7 +431,12 @@ def run_training(
             )
 
         # Create configuration from parameters
-        torch.manual_seed(seed)
+        if seed is not None:
+            torch.manual_seed(seed)
+        else:
+            # Use a default seed if none is provided
+            seed = 42
+            torch.manual_seed(seed)
 
         # Create model config
         model_config = gpt.ModelConfig(

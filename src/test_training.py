@@ -1,7 +1,7 @@
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
@@ -244,13 +244,33 @@ def test_run_training(sample_data_file, tokenizer_path, model_path):
     """Test the CLI interface for training."""
     # Mock train_model to avoid actual training
     with patch("training.train_model") as mock_train:
-        # Call the function
+        # Call the function with all required parameters
         result = training.run_training(
             data_path=sample_data_file,
             model_save_path=model_path,
             tokenizer_path=tokenizer_path,
             device="cpu",
             max_steps=2,  # Minimal training for test
+            # Required ModelConfig parameters
+            tokenizer_type="bpe",
+            max_vocab_size=2000,
+            model_name="gpt2",
+            block_size=128,
+            embed_dim=384,
+            hidden_dim=384,
+            batch_size=64,
+            num_layers=6,
+            head_size=64,
+            num_heads=6,
+            dropout=0.1,
+            ffw_width_multiplier=4,
+            train_epochs=1,
+            val_epochs=1,
+            learning_rate=3e-4,
+            train_val_split=0.9,
+            eval_interval=100,
+            eval_iters=10,
+            seed=42,
         )
 
         # Verify the function was called with the correct config
@@ -350,8 +370,8 @@ def test_yaml_config():
 
 def test_yaml_cli():
     """Test the YAML configuration CLI integration."""
-    import subprocess
     import os
+    import subprocess
 
     # Create a test directory
     test_dir = os.path.join(
@@ -464,8 +484,8 @@ def test_yaml_cli():
 
 def test_fire_cli():
     """Test the Fire CLI integration using a subprocess call with uv."""
-    import subprocess
     import os
+    import subprocess
 
     # Create a test directory within the data directory
     test_dir = os.path.join(
@@ -516,6 +536,15 @@ def test_fire_cli():
         "--num_heads=2",
         "--eval_iters=1",
         "--eval_interval=1",  # Ensure evaluation happens
+        "--tokenizer_type=bpe",
+        "--max_vocab_size=100",
+        "--model_name=gpt2",
+        "--dropout=0.1",
+        "--ffw_width_multiplier=4",
+        "--train_epochs=1",
+        "--val_epochs=1",
+        "--learning_rate=0.001",
+        "--seed=42",
     ]
 
     # Run the command and capture output
